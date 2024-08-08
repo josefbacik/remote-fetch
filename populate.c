@@ -134,6 +134,19 @@ static int process_directory(DIR *srcdir, char *srcpath, char *dstpath)
 					dst, strerror(errno), errno);
 				return -1;
 			}
+
+
+			if (fsync(fd)) {
+				fprintf(stderr, "Couldn't fsync file %s: %s (%d)\n",
+					dst, strerror(errno), errno);
+				return -1;
+			}
+
+			if (posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED)) {
+				fprintf(stderr, "Couldn't clear cache on file %s: %s (%d)\n",
+					dst, strerror(errno), errno);
+				return -1;
+			}
 		}
 		errno = 0;
 	}

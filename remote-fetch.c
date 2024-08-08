@@ -21,11 +21,11 @@
 #endif
 
 #ifndef FAN_PRE_ACCESS
-#define FAN_PRE_ACCESS 0x00100000
+#define FAN_PRE_ACCESS 0x00080000
 #endif
 
 #ifndef FAN_PRE_MODIFY
-#define FAN_PRE_MODIFY 0x00200000
+#define FAN_PRE_MODIFY 0x00100000
 #endif
 
 #ifndef FAN_EVENT_INFO_TYPE_RANGE
@@ -39,8 +39,13 @@ struct fanotify_event_info_range {
 
 #define FAN_EVENTS (FAN_PRE_ACCESS | FAN_PRE_MODIFY)
 
+#define __round_mask(x, y) ((__typeof__(x))((y)-1))
+#define round_up(x, y) ((((x)-1) | __round_mask(x, y))+1)
+#define round_down(x, y) ((x) & ~__round_mask(x, y))
+
 static const char *srcpath;
 static const char *dstpath;
+static int pagesize;
 
 #define __free(func) __attribute__((cleanup(func)))
 
@@ -179,6 +184,9 @@ static int handle_event(int fanotify_fd, int fd, off_t offset, size_t count)
 	relpath = get_relpath(fd);
 	if (!relpath)
 		return -1;
+
+	offset = round_down(offset, pagesize);
+	count = round_up(count, pagesize);
 
 	printf("opening src fd\n");
 	snprintf(path, sizeof(path), "%s%s", srcpath, relpath);
@@ -376,6 +384,12 @@ int main(int argc, char **argv)
 
 	if (argc != 3) {
 		usage();
+		return 1;
+	}
+
+	pagesize = sysconf(_SC_PAGESIZE);
+	if (pagesize < 0) {
+		perror("sysconf");
 		return 1;
 	}
 

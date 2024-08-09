@@ -178,6 +178,7 @@ static int handle_event(int fanotify_fd, int fd, off_t offset, size_t count)
 	int src_fd __free(close_fd) = -1;
 	size_t written = 0;
 	ssize_t copied;
+	off_t end = offset + count;
 	blkcnt_t src_blocks;
 	struct stat st;
 
@@ -186,7 +187,8 @@ static int handle_event(int fanotify_fd, int fd, off_t offset, size_t count)
 		return -1;
 
 	offset = round_down(offset, pagesize);
-	count = round_up(count, pagesize);
+	end = round_up(end, pagesize);
+	count = end - offset;
 
 	printf("opening src fd\n");
 	snprintf(path, sizeof(path), "%s%s", srcpath, relpath);

@@ -5,10 +5,12 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <poll.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/fanotify.h>
+#include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -46,6 +48,7 @@ struct fanotify_event_info_range {
 static const char *srcpath;
 static const char *dstpath;
 static int pagesize;
+static bool use_sendfile = false;
 
 #define __free(func) __attribute__((cleanup(func)))
 
@@ -156,6 +159,9 @@ static int copy_range(int src_fd, int fd, off_t offset, size_t count)
 	size_t written;
 	ssize_t copied;
 
+	if (use_sendfile)
+		goto slow;
+
 	while ((copied = copy_file_range(src_fd, &src_offset, fd, &offset,
 					 count, 0)) >= 0) {
 		if (copied == 0)
@@ -167,7 +173,30 @@ static int copy_range(int src_fd, int fd, off_t offset, size_t count)
 			return 0;
 	}
 
-	perror("copy_file_range");
+	if (errno != EXDEV) {
+		perror("copy_file_range");
+		return -1;
+	}
+	use_sendfile = true;
+
+slow:
+	/* I love linux interfaces. */
+	if (lseek(fd, offset, SEEK_SET) == (off_t)-1) {
+		perror("seeking");
+		return -1;
+	}
+
+	while ((copied = sendfile(fd, src_fd, &src_offset, count)) >= 0) {
+		if (copied == 0)
+			return 0;
+
+		printf("sendfile %ld count%d\n", copied, count);
+		count -= copied;
+		if (count == 0)
+			return 0;
+	}
+
+	perror("sendfile");
 	return -1;
 }
 
